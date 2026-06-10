@@ -100,3 +100,22 @@ resource "aws_iam_role_policy" "lambda_silver_s3" {
     ]
   })
 }
+resource "aws_iam_role" "discord_notifier_role" {
+  name = "discord-notifier-lambda-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect    = "Allow"
+        Principal = { Service = "lambda.amazonaws.com" }
+        Action    = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+resource "aws_iam_role_policy_attachment" "discord_notifier_basic" {
+  role       = aws_iam_role.discord_notifier_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+

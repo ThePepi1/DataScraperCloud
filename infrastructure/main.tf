@@ -42,3 +42,9 @@ module "lambda_silver" {
   lambda_silver_role_arn = module.iam.lambda_silver_role_arn
   s3_bucket_name         = module.s3.bucket_name
 }
+module "discord_notifier" {
+  source = "./modules/discord_notifier"
+
+  lambda_role_arn     = module.iam.discord_notifier_role_arn
+  discord_webhook_url = var.discord_webhook_url
+}
