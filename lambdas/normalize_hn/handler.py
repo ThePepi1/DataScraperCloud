@@ -124,6 +124,22 @@ def record_to_user(item):
     }
 
 
+def get_existing_usernames(platform: str) -> set:
+    """Čita samo username kolonu iz S3 za datu platformu."""
+    try:
+        df = wr.s3.read_parquet(
+            path=f"s3://{BUCKET}/{SILVER}/users/",
+            dataset=True,
+            columns=["username"],
+            filters=[("platform", "=", platform)],
+            boto3_session=boto3.Session(),
+        )
+        return set(df["username"].tolist())
+    except Exception:
+        # Tabela još ne postoji
+        return set()
+
+
 def write_table(rows, table, partition_cols):
     if not rows:
         return
@@ -184,16 +200,28 @@ def handler(event, context):
     write_table(polls_rows, "polls", date_parts)
 
     if users_rows:
+        # 1. Deduplikacija unutar batch-a
         df_users = pd.DataFrame(users_rows).drop_duplicates(subset=["username"])
-        wr.s3.to_parquet(
-            df=df_users,
-            path=f"s3://{BUCKET}/{SILVER}/users/",
-            dataset=True,
-            mode="append",
-            partition_cols=["platform"],
-            boto3_session=boto3.Session(),
-        )
-        print(f"[users] wrote {len(df_users)} rows")
+
+        # 2. Učitaj postojeće username-ove iz S3 (samo ta kolona)
+        existing_usernames = get_existing_usernames("HackerNews")
+        print(f"[users] postojećih u S3: {len(existing_usernames)}")
+
+        # 3. Zadrži samo one kojih nema u S3
+        df_new_users = df_users[~df_users["username"].isin(existing_usernames)]
+
+        if not df_new_users.empty:
+            wr.s3.to_parquet(
+                df=df_new_users,
+                path=f"s3://{BUCKET}/{SILVER}/users/",
+                dataset=True,
+                mode="append",
+                partition_cols=["platform"],
+                boto3_session=boto3.Session(),
+            )
+            print(f"[users] upisano {len(df_new_users)} novih korisnika")
+        else:
+            print("[users] nema novih korisnika")
 
     return {
         "statusCode": 200,
