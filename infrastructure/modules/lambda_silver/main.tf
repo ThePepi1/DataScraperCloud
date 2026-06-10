@@ -50,7 +50,7 @@ resource "aws_lambda_function" "normalize_twitter" {
   runtime          = "python3.12"
   role             = var.lambda_silver_role_arn
   timeout          = 300
-  memory_size      = 512
+  memory_size      = 1024
   source_code_hash = data.archive_file.normalize_twitter.output_base64sha256
 
   layers = [local.awswrangler_layer_arn]
