@@ -48,3 +48,8 @@ module "discord_notifier" {
   lambda_role_arn     = module.iam.discord_notifier_role_arn
   discord_webhook_url = var.discord_webhook_url
 }
+module "lambda_gold" {
+  source = "./modules/lambda_gold"
+  lambda_gold_role_arn = module.iam.lambda_gold_role_arn
+  s3_bucket_name       = module.s3.bucket_name
+}

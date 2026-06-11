@@ -25,3 +25,6 @@ output "discord_notifier_role_name" {
   description = "Name of the Discord notifier Lambda role"
   value       = aws_iam_role.discord_notifier_role.name
 }
+output "lambda_gold_role_arn" {
+  value = aws_iam_role.lambda_gold.arn
+}
