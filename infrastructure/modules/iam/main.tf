@@ -182,3 +182,48 @@ resource "aws_iam_role_policy" "lambda_gold_s3" {
     ]
   })
 }
+resource "aws_iam_role" "lambda_sync" {
+  name = "lambda-sync-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect    = "Allow"
+        Principal = { Service = "lambda.amazonaws.com" }
+        Action    = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_sync_basic" {
+  role       = aws_iam_role.lambda_sync.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_sync_vpc" {
+  role       = aws_iam_role.lambda_sync.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+}
+
+resource "aws_iam_role_policy" "lambda_sync_s3" {
+  name = "lambda-sync-s3-policy"
+  role = aws_iam_role.lambda_sync.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["s3:GetObject"]
+        Resource = "${var.s3_bucket_arn}/gold/*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket", "s3:GetBucketLocation"]
+        Resource = var.s3_bucket_arn
+      }
+    ]
+  })
+}

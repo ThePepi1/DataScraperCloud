@@ -1,24 +1,33 @@
-variable "aws_access_key" {
-  type      = string
-  sensitive = true
+variable "vpc_id" {
+  description = "VPC ID"
+  type        = string
 }
 
-variable "aws_secret_key" {
-  type      = string
-  sensitive = true
-}
-variable "discord_webhook_url" {
-  description = "Discord Incoming Webhook URL — nikad ne hardcode-uj, koristi tfvars ili SSM"
+variable "subnet_id" {
+  description = "Public subnet ID"
   type        = string
-  sensitive   = true
 }
+
+variable "lambda_sg_id" {
+  description = "Lambda security group ID"
+  type        = string
+}
+
 variable "my_ip" {
-  description = "Tvoja javna IP adresa"
+  description = "Lista dozvoljenih IP adresa"
   type        = list(string)
 }
-variable "vpc_cidr" {
-  description = "VPC CIDR block"
+
+variable "ec2_ami" {
+  description = "Ubuntu 22.04 AMI za eu-central-1"
   type        = string
+  default     = "ami-0faab6bdbac9486fb"
+}
+
+variable "ec2_instance_type" {
+  description = "EC2 tip instance"
+  type        = string
+  default     = "t3.micro"
 }
 
 variable "key_pair_name" {
@@ -64,5 +73,10 @@ variable "superset_admin_lastname" {
 
 variable "superset_admin_email" {
   description = "Superset admin email"
+  type        = string
+}
+
+variable "vpc_cidr" {
+  description = "VPC CIDR block"
   type        = string
 }

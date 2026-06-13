@@ -28,3 +28,7 @@ output "discord_notifier_role_name" {
 output "lambda_gold_role_arn" {
   value = aws_iam_role.lambda_gold.arn
 }
+output "lambda_sync_role_arn" {
+  description = "ARN of the sync Lambda IAM role"
+  value       = aws_iam_role.lambda_sync.arn
+}

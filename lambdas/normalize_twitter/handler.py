@@ -36,7 +36,6 @@ def parse_hashtags(tags_field):
 
 
 def get_existing_usernames(platform: str) -> set:
-    """Čita samo username kolonu iz S3 za datu platformu."""
     try:
         df = wr.s3.read_parquet(
             path=f"s3://{BUCKET}/{SILVER}/users/",
@@ -47,7 +46,6 @@ def get_existing_usernames(platform: str) -> set:
         )
         return set(df["username"].tolist())
     except Exception:
-        # Tabela još ne postoji
         return set()
 
 
@@ -66,27 +64,34 @@ def handler(event, context):
         obj = s3_client.get_object(Bucket=bucket, Key=key)
         df = pd.read_csv(io.BytesIO(obj["Body"].read()))
 
-        # Osnovna obrada
         df["user_name"] = df["user_name"].fillna("").astype(str).str.strip()
         df["text"] = df["text"].fillna("").astype(str).str.strip()
 
-        # ID kreiramo pre nego što radimo bilo kakve druge transformacije
+        if "user_folowers" in df.columns:
+            df["user_folowers"] = pd.to_numeric(df["user_folowers"], errors="coerce").astype("Int64")
+        else:
+            df["user_folowers"] = pd.NA
+
         raw_id = (df["user_name"] + "|" + df["date"].astype(str) + "|" + df["text"]).apply(
             lambda x: hashlib.sha256(x.encode()).hexdigest()
         )
         df["tweet_id"] = raw_id
         df = df.drop_duplicates(subset=["tweet_id"])
 
-        # Datumi
         df["created_at"] = df["date"].apply(normalise_ts)
         dt = pd.to_datetime(df["created_at"], errors="coerce", utc=True)
         df["year"] = dt.dt.year.astype("Int64").astype(str)
         df["month"] = dt.dt.month.astype("Int64").astype(str).str.zfill(2)
         df["day"] = dt.dt.day.astype("Int64").astype(str).str.zfill(2)
 
-        # Tweets
-        df_tweets = df[["tweet_id", "user_name", "is_retweet", "text", "hashtags", "created_at", "year", "month", "day"]].copy()
-        df_tweets.columns = ["tweet_id", "author_username", "is_retweet", "content_text", "hashtags", "created_at", "year", "month", "day"]
+        df_tweets = df[[
+            "tweet_id", "user_name", "is_retweet", "text",
+            "hashtags", "user_folowers", "created_at", "year", "month", "day"
+        ]].copy()
+        df_tweets.columns = [
+            "tweet_id", "author_username", "is_retweet", "content_text",
+            "hashtags", "followers", "created_at", "year", "month", "day"
+        ]
         df_tweets["post_type"] = df_tweets["is_retweet"].map(lambda x: "retweet" if x else "tweet")
         df_tweets["ingested_at"] = ingested_at
 
@@ -101,18 +106,18 @@ def handler(event, context):
         print(f"[tweets] upisano {len(df_tweets)} redova")
 
         # Users
-        df_users = df[["user_name", "user_verified", "user_created"]].drop_duplicates(subset=["user_name"]).copy()
-        df_users.columns = ["username", "is_verified", "created_at"]
+        df_users = df[[
+            "user_name", "user_verified", "user_created", "user_folowers"
+        ]].drop_duplicates(subset=["user_name"]).copy()
+        df_users.columns = ["username", "is_verified", "created_at", "followers"]
         df_users["user_id"] = [str(uuid.uuid4()) for _ in range(len(df_users))]
         df_users["platform"] = "X"
         df_users["karma_score"] = None
         df_users["ingested_at"] = ingested_at
 
-        # 1. Učitaj postojeće username-ove iz S3 (samo ta kolona)
         existing_usernames = get_existing_usernames("X")
         print(f"[users] postojećih X korisnika u S3: {len(existing_usernames)}")
 
-        # 2. Zadrži samo one kojih nema u S3
         df_new_users = df_users[~df_users["username"].isin(existing_usernames)]
 
         if not df_new_users.empty:
