@@ -15,7 +15,7 @@ ingress {
   from_port   = 8088
   to_port     = 8088
   protocol    = "tcp"
-  cidr_blocks = [for ip in var.my_ip : "${ip}/32"]
+  cidr_blocks = ["0.0.0.0/0"]
 }
 
   ingress {
