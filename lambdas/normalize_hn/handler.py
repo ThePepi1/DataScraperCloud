@@ -155,6 +155,30 @@ def write_table(rows, table, partition_cols):
     print(f"[{table}] wrote {len(df)} rows")
 
 
+def _resolve_keys_from_event(event):
+    """
+    Podržava dva oblika ulaza:
+    1. Poziv iz Step Function-a (posle bronze_layer state-a):
+       {"bucket": "...", "keys": ["bronze/hackernews/...json", ...], ...}
+    2. Legacy S3 event notification format:
+       {"Records": [{"s3": {"bucket": {"name": "..."}, "object": {"key": "..."}}}]}
+    """
+    pairs = []
+
+    if "keys" in event and "bucket" in event:
+        bucket = event["bucket"]
+        for key in event.get("keys", []):
+            pairs.append((bucket, key))
+        return pairs
+
+    for record in event.get("Records", []):
+        bucket = record["s3"]["bucket"]["name"]
+        key = record["s3"]["object"]["key"]
+        pairs.append((bucket, key))
+
+    return pairs
+
+
 def handler(event, context):
     posts_rows = []
     jobs_rows = []
@@ -162,10 +186,9 @@ def handler(event, context):
     users_rows = []
     seen_ids = set()
 
-    for record in event.get("Records", []):
-        bucket = record["s3"]["bucket"]["name"]
-        key = record["s3"]["object"]["key"]
+    key_pairs = _resolve_keys_from_event(event)
 
+    for bucket, key in key_pairs:
         if "bronze/hackernews" not in key or not key.endswith(".json"):
             print(f"Skipping: {key}")
             continue
@@ -223,12 +246,20 @@ def handler(event, context):
         else:
             print("[users] nema novih korisnika")
 
+    # Sakupi jedinstvene datume (YYYY-MM-DD) iz svih obrađenih zapisa,
+    # na osnovu njihovog stvarnog year/month/day (izvedenog iz created_at).
+    # Ovo se prosleđuje gold state-u kroz Step Function, da gold zna
+    # tačno koje dane treba da agregira, bez nagađanja "juče".
+    processed_dates = set()
+    for row in posts_rows + jobs_rows + polls_rows:
+        if row.get("year") and row.get("month") and row.get("day"):
+            processed_dates.add(f"{row['year']}-{row['month']}-{row['day']}")
+
     return {
         "statusCode": 200,
-        "body": json.dumps({
-            "posts": len(posts_rows),
-            "jobs": len(jobs_rows),
-            "polls": len(polls_rows),
-            "users": len(users_rows),
-        }),
+        "posts": len(posts_rows),
+        "jobs": len(jobs_rows),
+        "polls": len(polls_rows),
+        "users": len(users_rows),
+        "dates": sorted(processed_dates),
     }

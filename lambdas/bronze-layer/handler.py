@@ -9,11 +9,13 @@ s3 = boto3.client("s3")
 BUCKET_NAME = os.environ["BUCKET_NAME"]
 BASE_URL = "https://hn.algolia.com/api/v1/search_by_date"
 
+
 def get_yesterday():
     yesterday = datetime.now(timezone.utc) - timedelta(days=1)
     start = yesterday.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
     end = yesterday.replace(hour=23, minute=59, second=59, microsecond=0).timestamp()
     return int(start), int(end), yesterday.strftime("%Y/%m/%d")
+
 
 def get_time_chunks(start, end, chunk_hours=2):
     chunks = []
@@ -25,9 +27,11 @@ def get_time_chunks(start, end, chunk_hours=2):
         current = chunk_end
     return chunks
 
+
 def fetch_chunk(tag, chunk_start, chunk_end, date_path, chunk_index):
     page = 0
     total_saved = 0
+    saved_keys = []
     while True:
         response = requests.get(
             BASE_URL,
@@ -42,7 +46,6 @@ def fetch_chunk(tag, chunk_start, chunk_end, date_path, chunk_index):
         response.raise_for_status()
         data = response.json()
         hits = data.get("hits", [])
-
         if not hits:
             break
 
@@ -54,32 +57,36 @@ def fetch_chunk(tag, chunk_start, chunk_end, date_path, chunk_index):
             ContentType="application/json",
         )
         total_saved += len(hits)
+        saved_keys.append(key)
 
         nb_pages = data.get("nbPages", 1)
         if page >= nb_pages - 1:
             break
         page += 1
+    return total_saved, saved_keys
 
-    return total_saved
 
 def fetch_and_save_items(tag, start, end, date_path, chunk_hours=2):
     chunks = get_time_chunks(start, end, chunk_hours)
     total_saved = 0
-
+    all_keys = []
     with ThreadPoolExecutor(max_workers=1) as executor:
         futures = {
             executor.submit(fetch_chunk, tag, chunk_start, chunk_end, date_path, i): i
             for i, (chunk_start, chunk_end) in enumerate(chunks)
         }
         for future in as_completed(futures):
-            total_saved += future.result()
+            saved, keys = future.result()
+            total_saved += saved
+            all_keys.extend(keys)
+    return total_saved, all_keys
 
-    return total_saved
 
 def handler(event, context):
     start, end, date_path = get_yesterday()
     types = ["story", "ask_hn", "job", "poll", "comment"]
     result = {}
+    all_keys = []
 
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = {
@@ -91,13 +98,14 @@ def handler(event, context):
         }
         for future in as_completed(futures):
             item_type = futures[future]
-            result[item_type] = future.result()
+            saved, keys = future.result()
+            result[item_type] = saved
+            all_keys.extend(keys)
 
     return {
         "statusCode": 200,
-        "body": json.dumps({
-            "message": "Bronze HN collection complete",
-            "date": date_path,
-            "saved": result
-        })
+        "bucket": BUCKET_NAME,
+        "date_path": date_path,
+        "keys": all_keys,
+        "saved": result,
     }

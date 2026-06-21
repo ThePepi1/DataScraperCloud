@@ -227,3 +227,65 @@ resource "aws_iam_role_policy" "lambda_sync_s3" {
     ]
   })
 }
+resource "aws_iam_role" "step_function_pipeline" {
+  name = "step-function-pipeline-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "states.amazonaws.com"
+        }
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "step_function_invoke_lambdas" {
+  name = "step-function-invoke-lambdas-policy"
+  role = aws_iam_role.step_function_pipeline.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = "lambda:InvokeFunction"
+        Resource = [
+          var.bronze_lambda_arn,
+          var.normalize_hn_lambda_arn,
+          var.gold_lambda_arn,
+          var.lambda_sync_lambda_arn,
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "step_function_logging" {
+  name = "step-function-logging-policy"
+  role = aws_iam_role.step_function_pipeline.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogDelivery",
+          "logs:GetLogDelivery",
+          "logs:UpdateLogDelivery",
+          "logs:DeleteLogDelivery",
+          "logs:ListLogDeliveries",
+          "logs:PutResourcePolicy",
+          "logs:DescribeResourcePolicies",
+          "logs:DescribeLogGroups",
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}

@@ -19,14 +19,11 @@ resource "aws_lambda_function" "lambda_sync" {
   timeout          = 300
   memory_size      = 512
   source_code_hash = data.archive_file.lambda_sync.output_base64sha256
-
-  layers = [local.awswrangler_layer_arn]
-
+  layers           = [local.awswrangler_layer_arn]
   vpc_config {
     subnet_ids         = var.subnet_ids
     security_group_ids = [var.lambda_sg_id]
   }
-
   environment {
     variables = {
       BUCKET_NAME = var.s3_bucket_name
@@ -36,23 +33,4 @@ resource "aws_lambda_function" "lambda_sync" {
       DB_PASSWORD = var.db_password
     }
   }
-}
-
-resource "aws_cloudwatch_event_rule" "sync_daily" {
-  name                = "lambda-sync-daily"
-  schedule_expression = "cron(0 20 * * ? *)"
-}
-
-resource "aws_cloudwatch_event_target" "sync_target" {
-  rule      = aws_cloudwatch_event_rule.sync_daily.name
-  target_id = "lambda_sync"
-  arn       = aws_lambda_function.lambda_sync.arn
-}
-
-resource "aws_lambda_permission" "sync_eventbridge" {
-  statement_id  = "AllowEventBridgeInvokeSync"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.lambda_sync.function_name
-  principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.sync_daily.arn
 }

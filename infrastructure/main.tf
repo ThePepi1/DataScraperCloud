@@ -24,8 +24,12 @@ module "vpc" {
 }
 
 module "iam" {
-  source         = "./modules/iam"
-  s3_bucket_arn  = module.s3.bucket_arn
+  source        = "./modules/iam"
+  s3_bucket_arn = module.s3.bucket_arn
+  bronze_lambda_arn       = module.lambda.lambda_arn
+  normalize_hn_lambda_arn = module.lambda_silver.normalize_hn_arn
+  gold_lambda_arn         = module.lambda_gold.gold_lambda_arn
+  lambda_sync_lambda_arn  = module.lambda_sync.lambda_sync_arn
 }
 
 module "lambda" {
@@ -82,4 +86,12 @@ module "lambda_sync" {
   db_password          = var.db_password
   subnet_ids           = [module.vpc.public_subnet_id]
   lambda_sg_id         = module.vpc.lambda_sg_id
+}
+module "step_function" {
+  source = "./modules/step_function"
+  step_function_role_arn  = module.iam.step_function_role_arn
+  bronze_lambda_arn       = module.lambda.lambda_arn
+  normalize_hn_lambda_arn = module.lambda_silver.normalize_hn_arn
+  gold_lambda_arn         = module.lambda_gold.gold_lambda_arn         
+  lambda_sync_lambda_arn  = module.lambda_sync.lambda_sync_arn  
 }

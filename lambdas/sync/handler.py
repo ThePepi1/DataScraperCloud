@@ -24,10 +24,23 @@ GOLD_TABLES = [
     "data_quality",
 ]
 
-def get_target_date(event):
+
+def get_target_dates(event):
+    """
+    Vraća listu date objekata koje treba sinhronizovati.
+    - Ako event sadrži "dates" (lista "YYYY-MM-DD" stringova od gold layer-a
+      preko Step Function-a), parsira i vraća tu listu.
+    - Ako event sadrži pojedinačni "date" (legacy/ručni poziv), vraća listu sa jednim elementom.
+    - Inače fallback: "juče" (isto ponašanje kao i ranije).
+    """
+    if event and "dates" in event and event["dates"]:
+        return [datetime.strptime(d, "%Y-%m-%d").date() for d in event["dates"]]
+
     if event and "date" in event:
-        return datetime.strptime(event["date"], "%Y-%m-%d").date()
-    return (datetime.now(timezone.utc) - timedelta(days=1)).date()
+        return [datetime.strptime(event["date"], "%Y-%m-%d").date()]
+
+    return [(datetime.now(timezone.utc) - timedelta(days=1)).date()]
+
 
 def get_conn():
     return psycopg2.connect(
@@ -37,6 +50,7 @@ def get_conn():
         password=DB_PASSWORD,
         connect_timeout=10
     )
+
 
 def load_gold_table(table, target_date):
     path = f"s3://{BUCKET}/gold/{table}/"
@@ -52,6 +66,7 @@ def load_gold_table(table, target_date):
         print(f"  Skipping {table}: {e}")
         return pd.DataFrame()
 
+
 def df_to_postgres(conn, df, table):
     if df.empty:
         return
@@ -61,12 +76,13 @@ def df_to_postgres(conn, df, table):
     for col in df.columns:
         df[col] = df[col].apply(lambda x: None if pd.isna(x) else (
             int(x) if isinstance(x, (int,)) else (
-            float(x) if isinstance(x, float) else
-            str(x)
-        )))
+                float(x) if isinstance(x, float) else
+                str(x)
+            )))
 
     cols = list(df.columns)
     values = [tuple(row) for row in df.itertuples(index=False)]
+
     create_cols = ", ".join([f'"{c}" TEXT' for c in cols])
     insert_cols = ", ".join([f'"{c}"' for c in cols])
 
@@ -84,17 +100,9 @@ def df_to_postgres(conn, df, table):
     conn.commit()
     print(f"  Wrote {table}: {len(df)} rows")
 
-def handler(event, context):
-    print(json.dumps(event or {}))
-    target_date = get_target_date(event)
+
+def sync_single_date(conn, target_date):
     print(f"Syncing gold -> PostgreSQL for {target_date}")
-
-    try:
-        conn = get_conn()
-        print("  DB connected")
-    except Exception as e:
-        return {"statusCode": 500, "msg": f"DB connection failed: {e}"}
-
     results = {}
     for table in GOLD_TABLES:
         df = load_gold_table(table, target_date)
@@ -102,9 +110,30 @@ def handler(event, context):
             df_to_postgres(conn, df, table)
             results[table] = len(df)
         except Exception as e:
-            print(f"  Failed {table}: {e}")
+            print(f"  Failed {table} for {target_date}: {e}")
             results[table] = f"ERROR: {e}"
+    return results
+
+
+def handler(event, context):
+    print(json.dumps(event or {}))
+    target_dates = get_target_dates(event)
+    print(f"Processing {len(target_dates)} date(s): {[str(d) for d in target_dates]}")
+
+    try:
+        conn = get_conn()
+        print("  DB connected")
+    except Exception as e:
+        return {"statusCode": 500, "msg": f"DB connection failed: {e}"}
+
+    all_results = {}
+    for target_date in target_dates:
+        all_results[str(target_date)] = sync_single_date(conn, target_date)
 
     conn.close()
-    print(f"Done: {results}")
-    return {"statusCode": 200, "date": str(target_date), "results": results}
+    print(f"Done: {all_results}")
+    return {
+        "statusCode": 200,
+        "dates": [str(d) for d in target_dates],
+        "results": all_results,
+    }

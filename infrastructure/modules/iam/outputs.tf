@@ -32,3 +32,12 @@ output "lambda_sync_role_arn" {
   description = "ARN of the sync Lambda IAM role"
   value       = aws_iam_role.lambda_sync.arn
 }
+output "step_function_role_arn" {
+  description = "ARN of the Step Functions pipeline IAM role"
+  value       = aws_iam_role.step_function_pipeline.arn
+}
+
+output "step_function_role_name" {
+  description = "Name of the Step Functions pipeline IAM role"
+  value       = aws_iam_role.step_function_pipeline.name
+}

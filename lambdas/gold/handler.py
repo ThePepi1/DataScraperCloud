@@ -9,10 +9,21 @@ BUCKET = os.environ["BUCKET_NAME"]
 s3 = boto3.client("s3")
 
 
-def get_target_date(event):
+def get_target_dates(event):
+    """
+    Vraća listu date objekata koje treba obraditi.
+    - Ako event sadrži "dates" (lista "YYYY-MM-DD" stringova od normalize_hn
+      preko Step Function-a), parsira i vraća tu listu.
+    - Ako event sadrži pojedinačni "date" (legacy/ručni poziv), vraća listu sa jednim elementom.
+    - Inače fallback: "juče" (isto ponašanje kao i ranije).
+    """
+    if event and "dates" in event and event["dates"]:
+        return [datetime.strptime(d, "%Y-%m-%d").date() for d in event["dates"]]
+
     if event and "date" in event:
-        return datetime.strptime(event["date"], "%Y-%m-%d").date()
-    return (datetime.now(timezone.utc) - timedelta(days=1)).date()
+        return [datetime.strptime(event["date"], "%Y-%m-%d").date()]
+
+    return [(datetime.now(timezone.utc) - timedelta(days=1)).date()]
 
 
 def load_silver(target_date):
@@ -53,19 +64,22 @@ def load_silver(target_date):
     return pd.concat(dfs, ignore_index=True)
 
 
-def handler(event, context):
-    print(json.dumps(event or {}))
-    target_date = get_target_date(event)
+def process_single_date(target_date):
+    """
+    Radi celu gold agregaciju za jedan dan. Vraća True ako je bilo
+    podataka i nešto je upisano, False ako je dan bio prazan.
+    """
     print(f"Target date: {target_date}")
 
     try:
         df = load_silver(target_date)
     except Exception as e:
-        print(f"Failed to load silver: {e}")
-        return {"statusCode": 500, "msg": str(e)}
+        print(f"Failed to load silver for {target_date}: {e}")
+        return False
 
     if df.empty:
-        return {"statusCode": 200, "msg": "no data"}
+        print(f"  No data for {target_date}")
+        return False
 
     if "created_at" in df.columns:
         df["date"] = pd.to_datetime(df["created_at"], errors="coerce").dt.date
@@ -77,6 +91,7 @@ def handler(event, context):
         df["date"] = target_date
 
     gold = f"s3://{BUCKET}/gold/"
+    wrote_anything = False
 
     # --- daily_posts ---
     # HN: story, ask_hn, show_hn, job, poll, comment
@@ -118,6 +133,7 @@ def handler(event, context):
             partition_cols=["date"],
         )
         print(f"  Wrote daily_posts: {len(daily_posts)} rows")
+        wrote_anything = True
 
     posts_df = df[df["_source"].isin(["posts", "jobs", "polls"]) & (df["date"] == target_date)]
     tweets_df = df[df["_source"] == "tweets"]
@@ -138,6 +154,7 @@ def handler(event, context):
             partition_cols=["date", "platform"],
         )
         print(f"  Wrote daily_users HackerNews: {hn_user_count} unique users")
+        wrote_anything = True
 
     # --- daily_users X ---
     if not tweets_df.empty:
@@ -157,6 +174,7 @@ def handler(event, context):
                 partition_cols=["date", "platform"],
             )
             print(f"  Wrote daily_users X: {x_user_count} unique users")
+            wrote_anything = True
 
     # --- top_x_users (top 10 po followers, particionirano po danu) ---
     if not tweets_df.empty and "followers" in tweets_df.columns:
@@ -180,6 +198,7 @@ def handler(event, context):
                 partition_cols=["date"],
             )
             print(f"  Wrote top_x_users: {len(top_x)} rows")
+            wrote_anything = True
 
     # --- top/low HN users ---
     if not posts_df.empty and "author_username" in posts_df.columns:
@@ -238,6 +257,7 @@ def handler(event, context):
             partition_cols=["date"],
         )
         print(f"  Wrote top/low_hn_users: {len(top_hn)} rows each")
+        wrote_anything = True
 
     # --- top_jobs ---
     jobs_df = df[(df["_source"] == "jobs") & (df["date"] == target_date)]
@@ -252,6 +272,7 @@ def handler(event, context):
             partition_cols=["date"],
         )
         print(f"  Wrote top_jobs: {len(top_jobs)} rows")
+        wrote_anything = True
 
     # --- top_posts ---
     if "post_type" in df.columns and "points" in df.columns:
@@ -270,6 +291,7 @@ def handler(event, context):
                 partition_cols=["date"],
             )
             print(f"  Wrote top_posts: {len(top_posts)} rows")
+            wrote_anything = True
 
     # --- data_quality ---
     dq_df_source = df[df["date"] == target_date] if "date" in df.columns else df
@@ -287,6 +309,29 @@ def handler(event, context):
             partition_cols=["date"],
         )
         print(f"  Wrote data_quality, DQ score: {dq:.4f}")
+        wrote_anything = True
 
     print(f"Done for {target_date}")
-    return {"statusCode": 200, "date": str(target_date)}
+    return wrote_anything
+
+
+def handler(event, context):
+    print(json.dumps(event or {}))
+    target_dates = get_target_dates(event)
+    print(f"Processing {len(target_dates)} date(s): {[str(d) for d in target_dates]}")
+
+    processed_dates = []
+    for target_date in target_dates:
+        try:
+            had_data = process_single_date(target_date)
+            if had_data:
+                processed_dates.append(str(target_date))
+        except Exception as e:
+            print(f"  Failed processing {target_date}: {e}")
+            continue
+
+
+    return {
+        "statusCode": 200,
+        "dates": processed_dates,
+    }
