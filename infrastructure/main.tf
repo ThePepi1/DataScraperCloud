@@ -19,11 +19,17 @@ module "s3" {
 
 module "vpc" {
   source = "./modules/vpc"
+  my_ip  = var.my_ip
+  vpc_cidr = var.vpc_cidr
 }
 
 module "iam" {
-  source         = "./modules/iam"
-  s3_bucket_arn  = module.s3.bucket_arn
+  source        = "./modules/iam"
+  s3_bucket_arn = module.s3.bucket_arn
+  bronze_lambda_arn       = module.lambda.lambda_arn
+  normalize_hn_lambda_arn = module.lambda_silver.normalize_hn_arn
+  gold_lambda_arn         = module.lambda_gold.gold_lambda_arn
+  lambda_sync_lambda_arn  = module.lambda_sync.lambda_sync_arn
 }
 
 module "lambda" {
@@ -52,4 +58,40 @@ module "lambda_gold" {
   source = "./modules/lambda_gold"
   lambda_gold_role_arn = module.iam.lambda_gold_role_arn
   s3_bucket_name       = module.s3.bucket_name
+}
+module "ec2" {
+  source = "./modules/ec2"
+
+  vpc_id    = module.vpc.vpc_id
+  subnet_id = module.vpc.public_subnet_id
+  lambda_sg_id = module.vpc.lambda_sg_id
+  my_ip     = var.my_ip
+  vpc_cidr  = var.vpc_cidr
+
+  key_pair_name            = var.key_pair_name
+  db_password              = var.db_password
+  superset_secret_key      = var.superset_secret_key
+  superset_admin_password  = var.superset_admin_password
+  superset_admin_username  = var.superset_admin_username
+  superset_admin_firstname = var.superset_admin_firstname
+  superset_admin_lastname  = var.superset_admin_lastname
+  superset_admin_email     = var.superset_admin_email
+}
+module "lambda_sync" {
+  source = "./modules/lambda_sync"
+
+  lambda_sync_role_arn = module.iam.lambda_sync_role_arn
+  s3_bucket_name       = module.s3.bucket_name
+  db_host              = module.ec2.db_endpoint
+  db_password          = var.db_password
+  subnet_ids           = [module.vpc.public_subnet_id]
+  lambda_sg_id         = module.vpc.lambda_sg_id
+}
+module "step_function" {
+  source = "./modules/step_function"
+  step_function_role_arn  = module.iam.step_function_role_arn
+  bronze_lambda_arn       = module.lambda.lambda_arn
+  normalize_hn_lambda_arn = module.lambda_silver.normalize_hn_arn
+  gold_lambda_arn         = module.lambda_gold.gold_lambda_arn         
+  lambda_sync_lambda_arn  = module.lambda_sync.lambda_sync_arn  
 }

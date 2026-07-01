@@ -1,5 +1,5 @@
-variable "s3_bucket_arn" {
-  description = "ARN of the S3 data lake bucket to grant PutObject access"
+variable "step_function_role_arn" {
+  description = "ARN of the IAM role the Step Functions state machine assumes (from modules/iam)"
   type        = string
 }
 
@@ -21,4 +21,10 @@ variable "gold_lambda_arn" {
 variable "lambda_sync_lambda_arn" {
   description = "ARN of the lambda_sync Lambda function"
   type        = string
+}
+
+variable "schedule_expression" {
+  description = "EventBridge cron/rate expression that triggers the whole pipeline daily"
+  type        = string
+  default     = "cron(0 18 * * ? *)"
 }
