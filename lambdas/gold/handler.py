@@ -200,47 +200,24 @@ def process_single_date(target_date):
             print(f"  Wrote top_x_users: {len(top_x)} rows")
             wrote_anything = True
 
-    # --- top/low HN users ---
-    if not posts_df.empty and "author_username" in posts_df.columns:
-
-        agg_dict = {"post_count": ("author_username", "count")}
-        if "karma_score" in posts_df.columns:
-            agg_dict["karma_score"] = ("karma_score", "max")
+# --- top/low HN users (sortirano po dnevnom karma_score-u) ---
+    if not posts_df.empty and "author_username" in posts_df.columns and "post_type" in posts_df.columns:
 
         user_activity = (
             posts_df.groupby("author_username")
-            .agg(**agg_dict)
+            .agg(
+                post_count=("post_type", lambda x: (x != "comment").sum()),
+                comment_count=("post_type", lambda x: (x == "comment").sum()),
+            )
             .reset_index()
         )
-
-        if "karma_score" not in user_activity.columns:
-            user_activity["karma_score"] = None
+        user_activity["karma_score"] = user_activity["post_count"] * 2 + user_activity["comment_count"]
 
         user_activity["date"] = target_date
         user_activity["platform"] = "HackerNews"
 
-        users_df = df[df["_source"] == "users"]
-        if not users_df.empty and "username" in users_df.columns and "karma_score" in users_df.columns:
-            karma_map = (
-                users_df[["username", "karma_score"]]
-                .dropna(subset=["karma_score"])
-                .drop_duplicates(subset=["username"])
-            )
-            if not karma_map.empty:
-                user_activity = user_activity.drop(columns=["karma_score"], errors="ignore")
-                user_activity = user_activity.merge(
-                    karma_map.rename(columns={"username": "author_username"}),
-                    on="author_username",
-                    how="left",
-                )
-
-        sort_cols = []
-        if "karma_score" in user_activity.columns and user_activity["karma_score"].notna().any():
-            sort_cols.append("karma_score")
-        sort_cols.append("post_count")
-
-        top_hn = user_activity.sort_values(sort_cols, ascending=False).head(10).copy()
-        low_hn = user_activity.sort_values(sort_cols, ascending=True).head(10).copy()
+        top_hn = user_activity.sort_values("karma_score", ascending=False).head(10).copy()
+        low_hn = user_activity.sort_values("karma_score", ascending=True).head(10).copy()
 
         wr.s3.to_parquet(
             df=top_hn,
@@ -258,7 +235,6 @@ def process_single_date(target_date):
         )
         print(f"  Wrote top/low_hn_users: {len(top_hn)} rows each")
         wrote_anything = True
-
     # --- top_jobs ---
     jobs_df = df[(df["_source"] == "jobs") & (df["date"] == target_date)]
     if not jobs_df.empty and "points" in jobs_df.columns:
