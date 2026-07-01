@@ -67,10 +67,10 @@ def handler(event, context):
         df["user_name"] = df["user_name"].fillna("").astype(str).str.strip()
         df["text"] = df["text"].fillna("").astype(str).str.strip()
 
-        if "user_folowers" in df.columns:
-            df["user_folowers"] = pd.to_numeric(df["user_folowers"], errors="coerce").astype("Int64")
+        if "user_followers" in df.columns:
+            df["user_followers"] = pd.to_numeric(df["user_followers"], errors="coerce").astype("Int64")
         else:
-            df["user_folowers"] = pd.NA
+            df["user_followers"] = pd.NA
 
         raw_id = (df["user_name"] + "|" + df["date"].astype(str) + "|" + df["text"]).apply(
             lambda x: hashlib.sha256(x.encode()).hexdigest()
@@ -86,7 +86,7 @@ def handler(event, context):
 
         df_tweets = df[[
             "tweet_id", "user_name", "is_retweet", "text",
-            "hashtags", "user_folowers", "created_at", "year", "month", "day"
+            "hashtags", "user_followers", "created_at", "year", "month", "day"
         ]].copy()
         df_tweets.columns = [
             "tweet_id", "author_username", "is_retweet", "content_text",
@@ -107,7 +107,7 @@ def handler(event, context):
 
         # Users
         df_users = df[[
-            "user_name", "user_verified", "user_created", "user_folowers"
+            "user_name", "user_verified", "user_created", "user_followers"
         ]].drop_duplicates(subset=["user_name"]).copy()
         df_users.columns = ["username", "is_verified", "created_at", "followers"]
         df_users["user_id"] = [str(uuid.uuid4()) for _ in range(len(df_users))]
