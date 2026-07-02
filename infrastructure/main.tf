@@ -38,11 +38,6 @@ module "lambda" {
   s3_bucket_name  = module.s3.bucket_name
 }
 
-module "eventbridge" {
-  source               = "./modules/eventbridge"
-  lambda_function_arn  = module.lambda.lambda_arn
-  lambda_function_name = module.lambda.lambda_name
-}
 module "lambda_silver" {
   source                 = "./modules/lambda_silver"
   lambda_silver_role_arn = module.iam.lambda_silver_role_arn

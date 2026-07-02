@@ -26,13 +26,6 @@ GOLD_TABLES = [
 
 
 def get_target_dates(event):
-    """
-    Vraća listu date objekata koje treba sinhronizovati.
-    - Ako event sadrži "dates" (lista "YYYY-MM-DD" stringova od gold layer-a
-      preko Step Function-a), parsira i vraća tu listu.
-    - Ako event sadrži pojedinačni "date" (legacy/ručni poziv), vraća listu sa jednim elementom.
-    - Inače fallback: "juče" (isto ponašanje kao i ranije).
-    """
     if event and "dates" in event and event["dates"]:
         return [datetime.strptime(d, "%Y-%m-%d").date() for d in event["dates"]]
 
@@ -92,6 +85,11 @@ def df_to_postgres(conn, df, table):
                 {create_cols}
             )
         """)
+        for c in cols:
+            cur.execute(f"""
+                ALTER TABLE {table} ADD COLUMN IF NOT EXISTS "{c}" TEXT
+            """)
+
         execute_values(cur, f"""
             INSERT INTO {table} ({insert_cols})
             VALUES %s
@@ -110,6 +108,7 @@ def sync_single_date(conn, target_date):
             df_to_postgres(conn, df, table)
             results[table] = len(df)
         except Exception as e:
+            conn.rollback()
             print(f"  Failed {table} for {target_date}: {e}")
             results[table] = f"ERROR: {e}"
     return results

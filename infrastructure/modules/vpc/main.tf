@@ -39,6 +39,14 @@ resource "aws_security_group" "lambda" {
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+  egress {
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr]
+    description = "Lambda to PostgreSQL na EC2"
+  }
 }
 
 resource "aws_vpc_endpoint" "s3" {
@@ -46,12 +54,3 @@ resource "aws_vpc_endpoint" "s3" {
   service_name    = "com.amazonaws.${var.region}.s3"
   route_table_ids = [aws_route_table.public.id]
 }
-resource "aws_security_group_rule" "lambda_egress_postgres" {
-  type              = "egress"
-  from_port         = 5432
-  to_port           = 5432
-  protocol          = "tcp"
-  cidr_blocks       = [var.vpc_cidr]
-  security_group_id = aws_security_group.lambda.id
-  description       = "Lambda to PostgreSQL na EC2"
-} 

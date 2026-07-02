@@ -26,5 +26,5 @@ variable "lambda_sync_lambda_arn" {
 variable "schedule_expression" {
   description = "EventBridge cron/rate expression that triggers the whole pipeline daily"
   type        = string
-  default     = "cron(0 18 * * ? *)"
+  default     = "cron(0 1 * * ? *)"
 }
